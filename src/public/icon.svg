@@ -1,0 +1,77 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <pattern id="grid" width="48" height="48" patternUnits="userSpaceOnUse">
+      <path d="M 48 0 L 0 0 0 48" fill="none" stroke="#ff7700" stroke-width="0.8" opacity="0.07"/>
+    </pattern>
+    <filter id="glow" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="7" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <filter id="glowsm" x="-30%" y="-30%" width="160%" height="160%">
+      <feGaussianBlur stdDeviation="3" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+  </defs>
+
+  <!-- Steel dark background -->
+  <rect width="512" height="512" fill="#0a0c0f"/>
+  <rect width="512" height="512" fill="url(#grid)"/>
+
+  <!-- Octagonal outer frame -->
+  <polygon points="120,6 392,6 506,120 506,392 392,506 120,506 6,392 6,120"
+    fill="none" stroke="#ff7700" stroke-width="10"/>
+
+  <!-- Inner frame accent -->
+  <polygon points="130,16 382,16 496,130 496,382 382,496 130,496 16,382 16,130"
+    fill="none" stroke="#ff7700" stroke-width="2" opacity="0.25"/>
+
+  <!-- Corner armor plates -->
+  <polygon points="6,120 120,6 210,6 6,96" fill="#ff7700"/>
+  <polygon points="392,6 506,6 506,96 302,6" fill="#ff7700"/>
+  <polygon points="6,392 6,506 120,506 6,416" fill="#ff7700"/>
+  <polygon points="506,392 506,506 392,506 506,416" fill="#ff7700"/>
+
+  <!-- V-Fin (Gundam twin antenna crest) -->
+  <polygon points="256,50 308,170 256,148 204,170" fill="#ffcc00" filter="url(#glow)"/>
+  <!-- V-fin center ridge -->
+  <line x1="256" y1="52" x2="256" y2="148" stroke="#fff0a0" stroke-width="4" opacity="0.7"/>
+
+  <!-- Helmet body -->
+  <polygon points="152,182 360,182 392,258 392,354 356,396 156,396 120,354 120,258"
+    fill="#10121c" stroke="#ff7700" stroke-width="6"/>
+
+  <!-- Visor ambient glow -->
+  <polygon points="163,220 349,220 325,272 187,272"
+    fill="#ff5500" opacity="0.2" filter="url(#glow)"/>
+
+  <!-- Visor main fill -->
+  <polygon points="163,220 349,220 325,272 187,272" fill="#ff8800"/>
+
+  <!-- Visor inner highlight (bright slit) -->
+  <polygon points="178,230 334,230 316,256 196,256" fill="#ffcc00" opacity="0.6"/>
+  <!-- Visor top bright edge -->
+  <line x1="163" y1="220" x2="349" y2="220" stroke="#ffcc00" stroke-width="3" opacity="0.8"/>
+
+  <!-- Forehead center rib -->
+  <line x1="256" y1="182" x2="256" y2="218" stroke="#ff9900" stroke-width="5" opacity="0.9"/>
+
+  <!-- Horizontal panel line below visor -->
+  <line x1="120" y1="295" x2="392" y2="295" stroke="#ff7700" stroke-width="2" opacity="0.5"/>
+
+  <!-- Chin armor block -->
+  <rect x="207" y="318" width="98" height="22" fill="#ff7700" opacity="0.85"/>
+  <!-- Chin highlight -->
+  <rect x="215" y="320" width="82" height="6" fill="#ffcc00" opacity="0.4"/>
+
+  <!-- Cheek vents – left -->
+  <rect x="122" y="298" width="30" height="8" fill="#ff7700" opacity="0.75"/>
+  <rect x="122" y="311" width="30" height="8" fill="#ff7700" opacity="0.75"/>
+
+  <!-- Cheek vents – right -->
+  <rect x="360" y="298" width="30" height="8" fill="#ff7700" opacity="0.75"/>
+  <rect x="360" y="311" width="30" height="8" fill="#ff7700" opacity="0.75"/>
+
+  <!-- Shoulder/side armor suggestion -->
+  <polygon points="66,240 122,220 122,298 66,318" fill="none" stroke="#ff7700" stroke-width="3" opacity="0.4"/>
+  <polygon points="446,240 390,220 390,298 446,318" fill="none" stroke="#ff7700" stroke-width="3" opacity="0.4"/>
+</svg>

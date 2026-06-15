@@ -1,0 +1,24 @@
+{
+  "permissions": {
+    "allow": [
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\peiqi\\\\behavior-tracker\" -Recurse -File | Where-Object { $_.FullName -notmatch \"node_modules\" } | Select-Object -ExpandProperty FullName)",
+      "PowerShell(firebase *)",
+      "PowerShell(Get-ChildItem -Path \"C:\\\\Users\\\\peiqi\\\\behavior-tracker\\\\src\" -Force | ForEach-Object { $_.Name })",
+      "PowerShell(Get-ChildItem \"C:\\\\Users\\\\peiqi\\\\behavior-tracker\\\\src\\\\public\" | ForEach-Object { $_.FullName })",
+      "mcp__claude_ai_Google_Drive__search_files",
+      "mcp__claude_ai_Google_Drive__read_file_content",
+      "Bash(npm run *)",
+      "Bash(firebase deploy *)",
+      "Bash(node *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:5173)",
+      "Bash(npx playwright *)",
+      "Bash(npm list *)",
+      "Bash(npm install *)",
+      "Bash(cmd.exe *)",
+      "Bash(firebase --version)",
+      "Bash(firebase projects:list)",
+      "Skill(run)",
+      "PowerShell(Remove-Item *)"
+    ]
+  }
+}

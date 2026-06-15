@@ -1,0 +1,36 @@
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+body {
+  font-family: 'Orbitron', 'Segoe UI', sans-serif;
+  background-color: #0a0c0f;
+  background-image:
+    linear-gradient(rgba(255, 119, 0, 0.035) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255, 119, 0, 0.035) 1px, transparent 1px),
+    linear-gradient(rgba(255,255,255,0.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(255,255,255,0.012) 1px, transparent 1px);
+  background-size: 96px 96px, 96px 96px, 32px 32px, 32px 32px;
+  color: #c8ccd8;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* CRT horizontal scanlines */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 3px,
+    rgba(0, 0, 0, 0.09) 3px,
+    rgba(0, 0, 0, 0.09) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+#root {
+  min-height: 100dvh;
+  display: flex;
+  flex-direction: column;
+}
