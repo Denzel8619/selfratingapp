@@ -128,6 +128,22 @@
 .type-badge.numeric  { background: var(--cyan-dim); color: var(--cyan); font-size: .6rem; }
 
 /* ── Rate My Day ───────────────────────────────────────── */
+.date-toggle {
+  display: flex; gap: .5rem; margin-bottom: .875rem;
+}
+.date-toggle-btn {
+  flex: 1; padding: .45rem .5rem;
+  border: 2px solid var(--border); background: var(--surface);
+  cursor: pointer; font-family: 'Press Start 2P', monospace;
+  font-size: .52rem; letter-spacing: .05em; color: var(--muted);
+  transition: all .15s;
+}
+.date-toggle-btn.active {
+  border-color: var(--cyan); color: var(--cyan);
+  text-shadow: 0 0 8px var(--cyan);
+}
+.date-toggle-btn:hover:not(.active) { border-color: var(--border-bright); color: var(--text); }
+
 .date-heading {
   font-family: 'Press Start 2P', monospace; font-size: .62rem;
   color: var(--muted); margin-bottom: 1.25rem; letter-spacing: .06em;

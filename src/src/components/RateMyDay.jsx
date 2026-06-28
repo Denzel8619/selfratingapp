@@ -10,12 +10,15 @@ function localDateKey(date = new Date()) {
   return `${y}-${m}-${d}`;
 }
 
-const todayKey = () => localDateKey();
+function getYesterday() {
+  const d = new Date();
+  d.setDate(d.getDate() - 1);
+  return d;
+}
 
-function getWeekDays() {
-  const now = new Date();
-  const dow = now.getDay();
-  const monday = new Date(now.getFullYear(), now.getMonth(), now.getDate() - (dow === 0 ? 6 : dow - 1));
+function getWeekDaysForDate(date) {
+  const dow = date.getDay();
+  const monday = new Date(date.getFullYear(), date.getMonth(), date.getDate() - (dow === 0 ? 6 : dow - 1));
   return Array.from({ length: 7 }, (_, i) =>
     localDateKey(new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + i))
   );
@@ -43,6 +46,7 @@ function computeNumericPoints(value, rule) {
 }
 
 export default function RateMyDay({ user }) {
+  const [targetDate, setTargetDate]       = useState(new Date());
   const [rules, setRules]                 = useState([]);
   const [dailyDone, setDailyDone]         = useState({});
   const [weeklyDone, setWeeklyDone]       = useState({});
@@ -53,8 +57,9 @@ export default function RateMyDay({ user }) {
   const [saved, setSaved]                 = useState(false);
   const [loading, setLoading]             = useState(true);
 
-  const dateKey  = todayKey();
-  const weekDays = getWeekDays();
+  const dateKey  = localDateKey(targetDate);
+  const weekDays = getWeekDaysForDate(targetDate);
+  const isToday  = dateKey === localDateKey(new Date());
 
   useEffect(() => {
     let mounted = true;
@@ -69,6 +74,7 @@ export default function RateMyDay({ user }) {
       setRules(loadedRules);
 
       const todayData = todaySnap.exists() ? todaySnap.data() : {};
+      setDailyDone(todayData.dailyDone ?? {});
       setWeeklyDone(todayData.weeklyDone ?? {});
       setNumericValues(
         Object.fromEntries(
@@ -137,11 +143,9 @@ export default function RateMyDay({ user }) {
     setSaved(true);
   };
 
-  const dateLabel = new Date().toLocaleDateString('en-US', {
+  const dateLabel = targetDate.toLocaleDateString('en-US', {
     weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
   }).toUpperCase();
-
-  if (loading) return <div className="loading-inner">LOADING...</div>;
 
   const activeRules  = rules.filter(r => !r.deleted);
   const dailyRules   = activeRules.filter(r => getRuleGoalType(r) === 'daily');
@@ -149,6 +153,18 @@ export default function RateMyDay({ user }) {
 
   return (
     <div className="rate-my-day">
+      <div className="date-toggle">
+        <button
+          className={`date-toggle-btn${isToday ? ' active' : ''}`}
+          onClick={() => { setTargetDate(new Date()); setSaved(false); setLoading(true); }}
+        >TODAY</button>
+        <button
+          className={`date-toggle-btn${!isToday ? ' active' : ''}`}
+          onClick={() => { setTargetDate(getYesterday()); setSaved(false); setLoading(true); }}
+        >YESTERDAY</button>
+      </div>
+
+      {loading ? <div className="loading-inner">LOADING...</div> : (<>
       <h2 className="date-heading">{dateLabel}</h2>
 
       {activeRules.length === 0 ? (
@@ -319,7 +335,7 @@ export default function RateMyDay({ user }) {
             <h3 className="section-label">// DAY NOTE</h3>
             <textarea
               className="day-note-input"
-              placeholder="HOW DID TODAY GO? (OPTIONAL)"
+              placeholder={isToday ? 'HOW DID TODAY GO? (OPTIONAL)' : 'HOW DID YESTERDAY GO? (OPTIONAL)'}
               value={note}
               onChange={e => { setNote(e.target.value); setSaved(false); }}
               maxLength={280}
@@ -332,6 +348,7 @@ export default function RateMyDay({ user }) {
           </button>
         </>
       )}
+      </>)}
     </div>
   );
 }
