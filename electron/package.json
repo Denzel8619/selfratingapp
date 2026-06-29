@@ -1,0 +1,33 @@
+{
+  "name": "behavior-tracker-desktop",
+  "version": "1.0.0",
+  "description": "Behavior Tracker desktop app with site blocking",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --win"
+  },
+  "devDependencies": {
+    "electron": "^32.0.0",
+    "electron-builder": "^24.0.0"
+  },
+  "build": {
+    "appId": "com.peiqi.behavior-tracker",
+    "productName": "Behavior Tracker",
+    "directories": {
+      "output": "dist-electron"
+    },
+    "win": {
+      "target": "nsis",
+      "requestedExecutionLevel": "requireAdministrator"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false
+    },
+    "files": [
+      "main.js",
+      "preload.js"
+    ]
+  }
+}
