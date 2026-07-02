@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, session } = require('electron');
 const path = require('path');
 const fs = require('fs');
 const { execSync } = require('child_process');
@@ -54,7 +54,8 @@ function createWindow() {
   win.loadURL('https://self-rating-app-b3b2b.web.app');
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
+  await session.defaultSession.clearCache();
   ipcMain.handle('block-sites',   (_e, sites) => blockSites(sites));
   ipcMain.handle('unblock-sites', ()           => unblockSites());
   createWindow();
