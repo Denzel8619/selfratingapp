@@ -152,7 +152,7 @@ export default function RateMyDay({ user }) {
   const weeklyRules  = activeRules.filter(r => getRuleGoalType(r) === 'weekly');
 
   return (
-    <div className="rate-my-day">
+    <div className={`rate-my-day${isToday ? '' : ' yesterday'}`}>
       <div className="date-toggle">
         <button
           className={`date-toggle-btn${isToday ? ' active' : ''}`}
