@@ -583,6 +583,40 @@
   line-height: 1.5; word-break: break-word;
 }
 
+/* ── Heatmap tooltip ───────────────────────────────────── */
+.hm-tooltip {
+  position: fixed; transform: translate(-50%, -100%);
+  z-index: 200; pointer-events: none;
+  background: #0d0f1a; border: 1px solid var(--border-bright);
+  padding: .5rem .75rem; min-width: 140px;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.6);
+}
+.hm-tt-date {
+  font-family: 'Press Start 2P', monospace; font-size: .4rem;
+  color: var(--muted); letter-spacing: .05em; margin-bottom: .35rem;
+}
+.hm-tt-score {
+  font-family: 'Press Start 2P', monospace; font-size: .6rem;
+  font-weight: 700; letter-spacing: .04em;
+}
+.hm-tt-breakdown {
+  font-family: 'Orbitron', sans-serif; font-size: .65rem;
+  margin-top: .2rem;
+}
+.hm-tt-pos { color: var(--positive); }
+.hm-tt-sep { color: var(--muted); }
+.hm-tt-neg { color: var(--negative); }
+.hm-tt-note {
+  font-family: 'Orbitron', sans-serif; font-size: .6rem; font-style: italic;
+  color: var(--muted); margin-top: .35rem; padding-top: .35rem;
+  border-top: 1px solid var(--border); line-height: 1.5;
+  word-break: break-word; max-width: 180px;
+}
+.hm-tt-nodata {
+  font-family: 'Press Start 2P', monospace; font-size: .44rem;
+  color: var(--muted); letter-spacing: .04em;
+}
+
 /* ── Heatmap ───────────────────────────────────────────── */
 .heatmap-wrap { display: flex; gap: 4px; overflow-x: auto; padding-bottom: 4px; margin-bottom: .5rem; }
 .heatmap-days { display: grid; grid-template-rows: repeat(7, 13px); gap: 2px; flex-shrink: 0; }

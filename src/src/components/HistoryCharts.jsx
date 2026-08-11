@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { collection, getDocs, getDoc, setDoc, doc, query, orderBy, limit } from 'firebase/firestore';
 import { db } from '../firebase';
 import { getRuleGoalType, getRuleInputType } from './RulesEditor';
@@ -76,10 +76,41 @@ function buildHeatmapCells(heatmapData) {
         label += ` · ${data.score > 0 ? '+' : ''}${data.score} pts`;
         if (data.note) label += ` · "${data.note}"`;
       }
-      cells.push({ key, score: data?.score, isFuture, isToday: key === todayKey, label });
+      cells.push({ key, score: data?.score, positive: data?.positive, negative: data?.negative, note: data?.note, isFuture, isToday: key === todayKey, label });
     }
   }
   return cells;
+}
+
+// ── heatmap tooltip ──────────────────────────────────────
+
+function HeatmapTooltip({ cell, pos }) {
+  if (!cell) return null;
+  const label = new Date(cell.key + 'T12:00:00').toLocaleDateString('en-US', {
+    weekday: 'short', month: 'short', day: 'numeric', year: 'numeric',
+  }).toUpperCase();
+  const hasData = cell.score !== undefined;
+  const net = cell.score ?? 0;
+  return (
+    <div className="hm-tooltip" style={{ left: pos.x, top: pos.y }}>
+      <div className="hm-tt-date">{label}</div>
+      {hasData ? (
+        <>
+          <div className="hm-tt-score" style={{ color: net >= 0 ? 'var(--positive)' : 'var(--negative)' }}>
+            {net > 0 ? `+${net}` : net} pts
+          </div>
+          <div className="hm-tt-breakdown">
+            <span className="hm-tt-pos">+{cell.positive ?? 0}</span>
+            <span className="hm-tt-sep"> / </span>
+            <span className="hm-tt-neg">−{cell.negative ?? 0}</span>
+          </div>
+          {cell.note && <div className="hm-tt-note">"{cell.note}"</div>}
+        </>
+      ) : (
+        <div className="hm-tt-nodata">NO RECORD</div>
+      )}
+    </div>
+  );
 }
 
 // ── daily tooltip ─────────────────────────────────────────
@@ -185,6 +216,8 @@ export default function HistoryCharts({ user }) {
   const [awards,          setAwards]          = useState([]);
   const [hasWeekly,       setHasWeekly]       = useState(false);
   const [loading,         setLoading]         = useState(true);
+  const [hmTooltip,       setHmTooltip]       = useState(null);
+  const [hmTooltipPos,    setHmTooltipPos]    = useState({ x: 0, y: 0 });
   const [reminderTime,    setReminderTime]    = useState(() => localStorage.getItem('bt-reminder') ?? '');
   const [notifOn,         setNotifOn]         = useState(() => !!localStorage.getItem('bt-reminder'));
   const [notifPermission, setNotifPermission] = useState(() =>
@@ -221,15 +254,15 @@ export default function HistoryCharts({ user }) {
       const scoreMap = {};
       ratingsSnap.docs.forEach(d => {
         const { date, dailyDone = {}, scores = {}, numericScores = {}, note = '' } = d.data();
-        let s = 0;
+        let pos = 0, neg = 0;
         const src = Object.keys(dailyDone).length > 0 ? dailyDone : scores;
         Object.entries(src).forEach(([ruleId, val]) => {
           const rule = ruleMap[ruleId];
           if (!rule || getRuleGoalType(rule) === 'weekly' || getRuleInputType(rule) === 'numeric') return;
-          if (rule.type === 'positive') s += val; else s -= val;
+          if (rule.type === 'positive') pos += val; else neg += val;
         });
-        Object.values(numericScores).forEach(pts => { s += pts; });
-        scoreMap[date] = { score: s, note };
+        Object.values(numericScores).forEach(pts => { if (pts > 0) pos += pts; else neg += -pts; });
+        scoreMap[date] = { score: pos - neg, positive: pos, negative: neg, note };
       });
       if (mounted) setHeatmapData(scoreMap);
 
@@ -469,7 +502,12 @@ export default function HistoryCharts({ user }) {
                       key={i}
                       className={`heatmap-cell${cell.isFuture ? ' hm-future' : ''}${cell.isToday ? ' hm-today' : ''}`}
                       style={{ background: cell.isFuture ? 'transparent' : heatColor(cell.score) }}
-                      title={cell.label}
+                      onMouseEnter={cell.isFuture ? undefined : e => {
+                        const r = e.currentTarget.getBoundingClientRect();
+                        setHmTooltipPos({ x: r.left + r.width / 2, y: r.top - 8 });
+                        setHmTooltip(cell);
+                      }}
+                      onMouseLeave={() => setHmTooltip(null)}
                     />
                   ))}
                 </div>
@@ -561,6 +599,8 @@ export default function HistoryCharts({ user }) {
           <p className="chart-legend-note">FADED BAR = CURRENT WEEK IN PROGRESS</p>
         </div>
       )}
+
+      <HeatmapTooltip cell={hmTooltip} pos={hmTooltipPos} />
 
       {/* Daily reminder */}
       <div className="reminder-section">
