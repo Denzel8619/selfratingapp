@@ -84,12 +84,20 @@
   background: var(--surface); position: sticky; top: 53px; z-index: 9;
 }
 .tab-btn {
-  flex: 1; padding: .75rem .5rem; border: none; background: none; cursor: pointer;
+  position: relative; flex: 1; padding: .75rem .5rem; border: none; background: none; cursor: pointer;
   font-family: 'Press Start 2P', monospace; font-size: .58rem; letter-spacing: .04em;
   color: var(--muted); border-bottom: 3px solid transparent; transition: all .15s;
 }
 .tab-btn.active { color: var(--cyan); border-bottom-color: var(--cyan); text-shadow: 0 0 8px var(--cyan); }
 .tab-btn:hover:not(.active) { background: var(--surface2); color: var(--text); }
+.tab-badge {
+  position: absolute; top: 3px; right: 6px;
+  min-width: 14px; height: 14px; padding: 0 3px; border-radius: 7px;
+  background: var(--negative); color: #fff;
+  font-family: 'Orbitron', sans-serif; font-size: .55rem; font-weight: 700;
+  display: grid; place-items: center;
+  box-shadow: 0 0 8px rgba(255,32,85,0.6);
+}
 
 /* ── Tab content ───────────────────────────────────────── */
 .tab-content { flex: 1; padding: 1.25rem 1rem; max-width: 640px; width: 100%; margin: 0 auto; }
@@ -1003,3 +1011,34 @@
 .ws-days-logged {
   font-family: 'Orbitron', sans-serif; font-size: .68rem; color: var(--muted);
 }
+
+/* ── Deadlines ─────────────────────────────────────────── */
+.deadline-group { margin-bottom: 1.25rem; }
+.deadline-group:last-of-type { margin-bottom: 1.5rem; }
+
+.deadline-heading-overdue { color: var(--negative); border-bottom-color: var(--negative); text-shadow: 0 0 6px rgba(255,32,85,0.4); }
+.deadline-heading-today   { color: var(--weekly);   border-bottom-color: var(--weekly);   text-shadow: 0 0 6px rgba(119,170,255,0.4); }
+.deadline-heading-week    { color: var(--cyan);     border-bottom-color: var(--cyan);     text-shadow: 0 0 6px rgba(68,136,255,0.35); }
+.deadline-heading-later   { color: var(--muted);    border-bottom-color: var(--border); }
+
+.deadline-row { align-items: flex-start; gap: .75rem; }
+.deadline-info { flex: 1; display: flex; flex-direction: column; gap: .2rem; min-width: 0; }
+.deadline-notes {
+  font-family: 'Orbitron', sans-serif; font-size: .68rem; color: var(--muted);
+  line-height: 1.5; word-break: break-word;
+}
+.deadline-title-done { color: var(--muted); text-decoration: line-through; }
+
+.deadline-meta { display: flex; flex-direction: column; align-items: flex-end; gap: .2rem; flex-shrink: 0; }
+.deadline-countdown {
+  font-family: 'Press Start 2P', monospace; font-size: .48rem; letter-spacing: .03em;
+}
+.deadline-countdown-overdue { color: var(--negative); text-shadow: 0 0 6px rgba(255,32,85,0.5); }
+.deadline-countdown-today   { color: var(--weekly); }
+.deadline-countdown-week    { color: var(--cyan); }
+.deadline-countdown-later   { color: var(--muted); }
+
+.deadline-overdue { border-left: 4px solid var(--negative); }
+.deadline-today   { border-left: 4px solid var(--weekly); }
+.deadline-week    { border-left: 4px solid var(--cyan); }
+.deadline-later   { border-left: 4px solid var(--border); }

@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain } = require('electron');
+const { app, BrowserWindow, ipcMain, Notification } = require('electron');
 const path = require('path');
 const http = require('http');
 const net  = require('net');
@@ -168,4 +168,11 @@ ipcMain.handle('focus:unblock', async () => {
   } catch (e) {
     return { ok: false, error: e.message };
   }
+});
+
+ipcMain.handle('app:notify', (_, { title, body }) => {
+  if (Notification.isSupported()) {
+    new Notification({ title, body }).show();
+  }
+  return { ok: true };
 });

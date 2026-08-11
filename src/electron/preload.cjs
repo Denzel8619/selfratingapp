@@ -4,4 +4,5 @@ contextBridge.exposeInMainWorld('electronAPI', {
   isAdmin:      ()      => ipcRenderer.invoke('focus:isAdmin'),
   blockSites:   (sites) => ipcRenderer.invoke('focus:block', sites),
   unblockSites: ()      => ipcRenderer.invoke('focus:unblock'),
+  notify:       (title, body) => ipcRenderer.invoke('app:notify', { title, body }),
 });
