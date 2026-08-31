@@ -4,5 +4,11 @@ service cloud.firestore {
     match /users/{userId}/{document=**} {
       allow read, write: if request.auth != null && request.auth.uid == userId;
     }
+
+    // Nudges are only ever read/written by the dailyNudge Cloud Function via
+    // the Admin SDK (which bypasses these rules). Deny direct client access.
+    match /nudges/{nudgeId} {
+      allow read, write: if false;
+    }
   }
 }

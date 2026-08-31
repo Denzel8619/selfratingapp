@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { doc, getDoc, setDoc, collection, getDocs } from 'firebase/firestore';
-import { db } from '../firebase';
+import { httpsCallable } from 'firebase/functions';
+import { db, functions } from '../firebase';
 import { getRuleGoalType, getRuleInputType } from './RulesEditor';
 
 function localDateKey(date = new Date()) {
@@ -56,10 +57,28 @@ export default function RateMyDay({ user }) {
   const [saving, setSaving]               = useState(false);
   const [saved, setSaved]                 = useState(false);
   const [loading, setLoading]             = useState(true);
+  const [nudge, setNudge]                 = useState('');
+  const [nudgeLoading, setNudgeLoading]   = useState(true);
+  const [nudgeError, setNudgeError]       = useState(false);
 
   const dateKey  = localDateKey(targetDate);
   const weekDays = getWeekDaysForDate(targetDate);
   const isToday  = dateKey === localDateKey(new Date());
+
+  // Fetch the AI coaching nudge once when the screen loads. Independent of
+  // the TODAY/YESTERDAY toggle above - it always refers to "today's" nudge.
+  useEffect(() => {
+    let mounted = true;
+    const dailyNudge = httpsCallable(functions, 'dailyNudge');
+    dailyNudge({ todayKey: localDateKey(new Date()) })
+      .then(res => { if (mounted) setNudge(res.data?.nudge ?? ''); })
+      .catch(err => {
+        console.error('Failed to load daily nudge:', err);
+        if (mounted) setNudgeError(true);
+      })
+      .finally(() => { if (mounted) setNudgeLoading(false); });
+    return () => { mounted = false; };
+  }, [user.uid]);
 
   useEffect(() => {
     let mounted = true;
@@ -153,6 +172,15 @@ export default function RateMyDay({ user }) {
 
   return (
     <div className={`rate-my-day${isToday ? '' : ' yesterday'}`}>
+      {nudgeLoading && (
+        <div className="nudge-banner nudge-loading">COACH IS THINKING...</div>
+      )}
+      {!nudgeLoading && !nudgeError && nudge && (
+        <div className="nudge-banner">
+          <span className="nudge-icon">◆</span>
+          <span className="nudge-text">{nudge}</span>
+        </div>
+      )}
       <div className="date-toggle">
         <button
           className={`date-toggle-btn${isToday ? ' active' : ''}`}

@@ -18,7 +18,22 @@
       "Bash(firebase --version)",
       "Bash(firebase projects:list)",
       "Skill(run)",
-      "PowerShell(Remove-Item *)"
+      "PowerShell(Remove-Item *)",
+      "Bash(npx vite *)",
+      "Bash(git stash *)",
+      "Bash(echo \"---EXITCODE $?---\")",
+      "Bash(npx --yes playwright --version)",
+      "Read(//c/tmp/**)",
+      "Bash(npm init *)",
+      "Bash(netstat -ano)",
+      "Bash(awk '{print $5}')",
+      "Bash(taskkill *)",
+      "Bash(xargs -r -I{} taskkill //F //PID {})",
+      "Bash(rm -f /tmp/drive-deadlines.mjs /tmp/cleanup-leftovers.mjs /tmp/check.mjs /tmp/vite-dev.log /tmp/vite-dev.pid /c/tmp/0*.png /c/tmp/app-screenshot.png)",
+      "Bash(npx eslint *)",
+      "Bash(echo \"EXITCODE=$?\")",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\\\\n\" http://localhost:5173)",
+      "Bash(powershell -Command \"Stop-Process -Id 32676 -Force\")"
     ]
   }
 }

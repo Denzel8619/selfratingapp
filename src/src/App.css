@@ -141,6 +141,25 @@
   --cyan-dim: #130a28;
 }
 
+.nudge-banner {
+  display: flex; align-items: center; gap: .5rem;
+  padding: .625rem .75rem; margin-bottom: .875rem;
+  background: var(--cyan-dim); border: 2px solid var(--cyan);
+  border-left: 4px solid var(--cyan);
+  box-shadow: 0 0 12px rgba(68,136,255,0.15);
+}
+.nudge-icon { color: var(--cyan); flex-shrink: 0; }
+.nudge-text {
+  color: var(--text); font-size: .75rem; line-height: 1.5; letter-spacing: .01em;
+}
+.nudge-banner.nudge-loading {
+  color: var(--muted); font-family: 'Press Start 2P', monospace;
+  font-size: .52rem; letter-spacing: .06em;
+  border-color: var(--border); background: var(--surface);
+  border-left-color: var(--border-bright);
+  box-shadow: none; animation: blink 1.4s step-end infinite;
+}
+
 .date-toggle {
   display: flex; gap: .5rem; margin-bottom: .875rem;
 }
