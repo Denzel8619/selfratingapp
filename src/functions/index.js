@@ -1,9 +1,12 @@
 const {setGlobalOptions} = require("firebase-functions");
 const {onCall, HttpsError} = require("firebase-functions/https");
+const {onSchedule} = require("firebase-functions/scheduler");
 const {defineSecret} = require("firebase-functions/params");
 const logger = require("firebase-functions/logger");
 const admin = require("firebase-admin");
 const {GoogleGenerativeAI} = require("@google/generative-ai");
+
+const NUDGE_TIME_ZONE = "America/New_York";
 
 setGlobalOptions({ maxInstances: 10 });
 
@@ -36,6 +39,16 @@ function prevDateKey(todayKey) {
   const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(dt.getUTCDate()).padStart(2, "0");
   return `${yy}-${mm}-${dd}`;
+}
+
+// YYYY-MM-DD for "today" in a given IANA zone, via Intl rather than manual
+// offset math so DST transitions are handled correctly.
+function todayKeyInTimeZone(timeZone) {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone, year: "numeric", month: "2-digit", day: "2-digit",
+  }).formatToParts(new Date());
+  const get = (type) => parts.find((p) => p.type === type).value;
+  return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
 // Turns a users/{uid}/ratings/{yesterday} doc + users/{uid}/rules docs into a
@@ -97,6 +110,70 @@ function sanitizeNudge(raw) {
   return text;
 }
 
+// Shared by the onCall handler (generates on demand, for whichever user opens
+// the app) and the onSchedule job (pre-generates for every active user before
+// they open the app). Returns cached text as-is; only hits Gemini on a miss.
+async function computeAndCacheNudge(uid, todayKey) {
+  const nudgeRef = db.doc(`nudges/${uid}_${todayKey}`);
+
+  const cachedSnap = await nudgeRef.get();
+  if (cachedSnap.exists && cachedSnap.data()?.text) {
+    return { nudge: cachedSnap.data().text, cached: true };
+  }
+
+  const yesterdayKey = prevDateKey(todayKey);
+
+  const [ratingSnap, rulesSnap] = await Promise.all([
+    db.doc(`users/${uid}/ratings/${yesterdayKey}`).get(),
+    db.collection(`users/${uid}/rules`).get(),
+  ]);
+  const ratingData = ratingSnap.exists ? ratingSnap.data() : null;
+  const rules = rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+
+  const summary = buildYesterdaySummary(ratingData, rules);
+
+  const prompt =
+    "You are a terse, upbeat habit-tracking coach speaking directly to the user " +
+    "(\"you\"). Write exactly ONE short motivational line, under 15 words, that " +
+    "references something specific from yesterday's data below. No quotes, no " +
+    "emoji, no hashtags - just the line.\n\n" +
+    `Yesterday (${yesterdayKey}) summary: ${summary}`;
+
+  const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
+  const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
+  const result = await model.generateContent({
+    contents: [{ role: "user", parts: [{ text: prompt }] }],
+    generationConfig: {
+      temperature: 0.9,
+      maxOutputTokens: 1024,
+      thinkingConfig: { thinkingBudget: 0 },
+    },
+  });
+  const rawText = result.response.text();
+  logger.info("computeAndCacheNudge: raw Gemini response", {
+    uid,
+    rawText,
+    finishReason: result.response.candidates?.[0]?.finishReason,
+    usage: result.response.usageMetadata,
+  });
+  const nudgeText = sanitizeNudge(rawText);
+
+  if (!nudgeText) {
+    throw new Error("Gemini returned an empty nudge.");
+  }
+
+  await nudgeRef.set({
+    uid,
+    date: todayKey,
+    sourceDate: yesterdayKey,
+    text: nudgeText,
+    model: "gemini-3.6-flash",
+    createdAt: admin.firestore.FieldValue.serverTimestamp(),
+  });
+
+  return { nudge: nudgeText, cached: false };
+}
+
 exports.dailyNudge = onCall({ secrets: [GEMINI_API_KEY] }, async (request) => {
   const uid = request.auth?.uid;
   if (!uid) {
@@ -108,79 +185,33 @@ exports.dailyNudge = onCall({ secrets: [GEMINI_API_KEY] }, async (request) => {
     throw new HttpsError("invalid-argument", "todayKey must be a YYYY-MM-DD string.");
   }
 
-  const nudgeRef = db.doc(`nudges/${uid}_${todayKey}`);
-
-  const cachedSnap = await nudgeRef.get();
-  if (cachedSnap.exists && cachedSnap.data()?.text) {
-    return { nudge: cachedSnap.data().text, cached: true, date: todayKey };
-  }
-
-  const yesterdayKey = prevDateKey(todayKey);
-
-  let ratingData = null;
-  let rules = [];
   try {
-    const [ratingSnap, rulesSnap] = await Promise.all([
-      db.doc(`users/${uid}/ratings/${yesterdayKey}`).get(),
-      db.collection(`users/${uid}/rules`).get(),
-    ]);
-    ratingData = ratingSnap.exists ? ratingSnap.data() : null;
-    rules = rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+    const { nudge, cached } = await computeAndCacheNudge(uid, todayKey);
+    return { nudge, cached, date: todayKey };
   } catch (err) {
-    logger.error("dailyNudge: failed to read Firestore data", err);
-    throw new HttpsError("internal", "Could not load your data for the nudge.");
-  }
-
-  const summary = buildYesterdaySummary(ratingData, rules);
-
-  const prompt =
-    "You are a terse, upbeat habit-tracking coach speaking directly to the user " +
-    "(\"you\"). Write exactly ONE short motivational line, under 15 words, that " +
-    "references something specific from yesterday's data below. No quotes, no " +
-    "emoji, no hashtags - just the line.\n\n" +
-    `Yesterday (${yesterdayKey}) summary: ${summary}`;
-
-  let nudgeText;
-  try {
-    const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
-    const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
-    const result = await model.generateContent({
-      contents: [{ role: "user", parts: [{ text: prompt }] }],
-      generationConfig: {
-        temperature: 0.9,
-        maxOutputTokens: 1024,
-        thinkingConfig: { thinkingBudget: 0 },
-      },
-    });
-    const rawText = result.response.text();
-    logger.info("dailyNudge: raw Gemini response", {
-      rawText,
-      finishReason: result.response.candidates?.[0]?.finishReason,
-      usage: result.response.usageMetadata,
-    });
-    nudgeText = sanitizeNudge(rawText);
-  } catch (err) {
-    logger.error("dailyNudge: Gemini generation failed", err);
+    logger.error("dailyNudge: failed to generate nudge", err);
     throw new HttpsError("internal", "Could not generate a nudge right now.");
   }
-
-  if (!nudgeText) {
-    throw new HttpsError("internal", "Gemini returned an empty nudge.");
-  }
-
-  try {
-    await nudgeRef.set({
-      uid,
-      date: todayKey,
-      sourceDate: yesterdayKey,
-      text: nudgeText,
-      model: "gemini-3.6-flash",
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
-  } catch (err) {
-    // Non-fatal - still return the generated nudge even if caching failed.
-    logger.error("dailyNudge: failed to cache nudge", err);
-  }
-
-  return { nudge: nudgeText, cached: false, date: todayKey };
 });
+
+// Pre-generates today's nudge for every user who has set up rules, so it's
+// already cached by the time they open the app. Skips users with no rules
+// (never onboarded) to avoid burning Gemini calls on accounts that only ever
+// signed in once.
+exports.dailyNudgeScheduled = onSchedule(
+  { schedule: "0 6 * * *", timeZone: NUDGE_TIME_ZONE, secrets: [GEMINI_API_KEY] },
+  async () => {
+    const todayKey = todayKeyInTimeZone(NUDGE_TIME_ZONE);
+    const { users } = await admin.auth().listUsers(1000);
+
+    for (const { uid } of users) {
+      try {
+        const rulesSnap = await db.collection(`users/${uid}/rules`).limit(1).get();
+        if (rulesSnap.empty) continue;
+        await computeAndCacheNudge(uid, todayKey);
+      } catch (err) {
+        logger.error("dailyNudgeScheduled: failed for user", { uid, err });
+      }
+    }
+  },
+);
