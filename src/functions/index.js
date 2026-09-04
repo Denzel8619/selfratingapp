@@ -140,7 +140,7 @@ async function computeAndCacheNudge(uid, todayKey) {
     `Yesterday (${yesterdayKey}) summary: ${summary}`;
 
   const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
-  const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
+  const model = genAI.getGenerativeModel({ model: "gemini-2.5-flash" });
   const result = await model.generateContent({
     contents: [{ role: "user", parts: [{ text: prompt }] }],
     generationConfig: {
@@ -167,7 +167,7 @@ async function computeAndCacheNudge(uid, todayKey) {
     date: todayKey,
     sourceDate: yesterdayKey,
     text: nudgeText,
-    model: "gemini-3.6-flash",
+    model: "gemini-2.5-flash",
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
