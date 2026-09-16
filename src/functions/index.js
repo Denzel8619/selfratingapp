@@ -7,6 +7,9 @@ const admin = require("firebase-admin");
 const {GoogleGenerativeAI} = require("@google/generative-ai");
 
 const NUDGE_TIME_ZONE = "America/New_York";
+const RATINGS_HISTORY_LIMIT = 30;
+const DEADLINE_HORIZON_MS = 14 * 24 * 60 * 60 * 1000;
+const DEFAULT_QUESTION = "What's one small thing you're looking forward to this week?";
 
 setGlobalOptions({ maxInstances: 10 });
 
@@ -31,14 +34,31 @@ function ruleInputType(rule) {
 // Pure string/UTC date math so it never depends on the Cloud Functions
 // runtime's local timezone (which won't match the user's device timezone
 // that generated `todayKey` in the first place).
-function prevDateKey(todayKey) {
-  const [y, m, d] = todayKey.split("-").map(Number);
+function addDaysToKey(dateKey, delta) {
+  const [y, m, d] = dateKey.split("-").map(Number);
   const dt = new Date(Date.UTC(y, m - 1, d));
-  dt.setUTCDate(dt.getUTCDate() - 1);
+  dt.setUTCDate(dt.getUTCDate() + delta);
   const yy = dt.getUTCFullYear();
   const mm = String(dt.getUTCMonth() + 1).padStart(2, "0");
   const dd = String(dt.getUTCDate()).padStart(2, "0");
   return `${yy}-${mm}-${dd}`;
+}
+function prevDateKey(todayKey) {
+  return addDaysToKey(todayKey, -1);
+}
+
+// Monday-of-the-week key for a given date key, mirroring the client-side
+// week-boundary math in RateMyDay.jsx/WeeklySummary.jsx (getWeekDaysForDate/
+// getCurrentWeekDays), but done in pure UTC string math for the same reason
+// as addDaysToKey above.
+function mondayKeyOf(dateKey) {
+  const [y, m, d] = dateKey.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const back = dow === 0 ? 6 : dow - 1;
+  return addDaysToKey(dateKey, -back);
+}
+function weekKeys(mondayKey) {
+  return Array.from({ length: 7 }, (_, i) => addDaysToKey(mondayKey, i));
 }
 
 // YYYY-MM-DD for "today" in a given IANA zone, via Intl rather than manual
@@ -51,9 +71,33 @@ function todayKeyInTimeZone(timeZone) {
   return `${get("year")}-${get("month")}-${get("day")}`;
 }
 
+// Net day score, mirroring the identical logic duplicated client-side in
+// HistoryCharts.jsx (heatmap scoreMap) and WeeklySummary.jsx (day score):
+// positive-rule points minus negative-rule points minus numeric penalties,
+// skipping weekly/count and numeric-input rules. Returns null when the day
+// wasn't logged at all (as opposed to logged with a score of 0).
+function netScoreForDay(ratingData, ruleMap) {
+  if (!ratingData) return null;
+  const dailyDone = ratingData.dailyDone || {};
+  const scores = ratingData.scores || {};
+  const numericScores = ratingData.numericScores || {};
+  let pos = 0;
+  let neg = 0;
+  const src = Object.keys(dailyDone).length > 0 ? dailyDone : scores;
+  for (const [ruleId, val] of Object.entries(src)) {
+    const rule = ruleMap[ruleId];
+    if (!rule || ruleGoalType(rule) === "weekly" || ruleInputType(rule) === "numeric") continue;
+    if (rule.type === "positive") pos += val; else neg += val;
+  }
+  for (const pts of Object.values(numericScores)) {
+    if (pts > 0) pos += pts; else neg += -pts;
+  }
+  return pos - neg;
+}
+
 // Turns a users/{uid}/ratings/{yesterday} doc + users/{uid}/rules docs into a
 // short plain-English summary Gemini can reference specifics from.
-function buildYesterdaySummary(ratingData, rules) {
+function buildYesterdaySummaryFact(ratingData, rules) {
   if (!ratingData) {
     return "The user logged nothing at all yesterday - no missions were rated.";
   }
@@ -96,48 +140,203 @@ function buildYesterdaySummary(ratingData, rules) {
   return parts.join(" ");
 }
 
-// Keeps only the first line, strips wrapping quotes, and hard-caps length as
-// a safety net in case the model ignores the word-count instruction.
-function sanitizeNudge(raw) {
-  let text = (raw || "")
-    .trim()
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean)[0] || "";
+// Detects a rolling "Positive Launcher" streak (consecutive days scoring 40+,
+// generalizing the week-bounded award check in HistoryCharts.jsx into a
+// continuous streak) and the single longest currently-active per-rule streak.
+// Walks backward day-by-day from yesterday; a missing (unlogged) day breaks
+// any streak, same as the heatmap treating undefined days as no-data.
+function computeStreakFact(ratingsByDate, ruleMap, activeRules, yesterdayKey) {
+  let plStreak = 0;
+  let cursor = yesterdayKey;
+  while (true) {
+    const rd = ratingsByDate[cursor];
+    if (!rd) break;
+    const score = netScoreForDay(rd, ruleMap);
+    if (score === null || score < 40) break;
+    plStreak++;
+    cursor = prevDateKey(cursor);
+  }
+
+  let bestRule = null;
+  let bestStreak = 0;
+  for (const rule of activeRules) {
+    if (ruleGoalType(rule) !== "daily" || ruleInputType(rule) !== "yesno" || rule.type !== "positive") continue;
+    let streak = 0;
+    let c = yesterdayKey;
+    while (true) {
+      const rd = ratingsByDate[c];
+      if (!rd) break;
+      const done = rd.dailyDone?.[rule.id] ?? rd.scores?.[rule.id];
+      if (!done) break;
+      streak++;
+      c = prevDateKey(c);
+    }
+    if (streak > bestStreak) { bestStreak = streak; bestRule = rule; }
+  }
+
+  if (plStreak >= 5) {
+    return `On a ${plStreak}-day Positive Launcher streak (daily score 40+ each day).`;
+  }
+  if (plStreak >= 3) {
+    return `${plStreak}-day run scoring 40+ points a day - ${5 - plStreak} more day(s) locks in a Positive Launcher streak.`;
+  }
+  if (bestStreak >= 3 && bestRule) {
+    return `${bestRule.name}: a ${bestStreak}-day streak going.`;
+  }
+  return null;
+}
+
+// Nearest not-done deadline due within a 14-day horizon. Reads and filters
+// the whole collection in memory (mirrors useDeadlines.js's own no-filter
+// read) so this never needs a new Firestore composite index.
+function computeNearestDeadlineFact(deadlineDocs, nowMs) {
+  let nearest = null;
+  for (const d of deadlineDocs) {
+    if (d.done) continue;
+    const dueMs = d.dueAt?.toDate ? d.dueAt.toDate().getTime() : new Date(d.dueAt).getTime();
+    if (!Number.isFinite(dueMs)) continue;
+    if (dueMs < nowMs || dueMs > nowMs + DEADLINE_HORIZON_MS) continue;
+    if (!nearest || dueMs < nearest.dueMs) nearest = { title: d.title, dueMs };
+  }
+  if (!nearest) return null;
+
+  const daysUntil = Math.max(0, Math.round((nearest.dueMs - nowMs) / 86400000));
+  const when = daysUntil === 0 ? "today" : daysUntil === 1 ? "tomorrow" : `in ${daysUntil} days`;
+  return `'${nearest.title}' is due ${when}.`;
+}
+
+// Ports WeeklySummary.jsx's getGrade thresholds verbatim (S>=50, A>=30,
+// B>=10, C>=0, else D) and computes the same average-net-score grade
+// server-side from raw ratings, plus a trend comparison against last week.
+function getGrade(avgScore) {
+  if (avgScore >= 50) return { grade: "S", msg: "LEGENDARY WEEK" };
+  if (avgScore >= 30) return { grade: "A", msg: "EXCELLENT WEEK" };
+  if (avgScore >= 10) return { grade: "B", msg: "GOOD WEEK" };
+  if (avgScore >= 0) return { grade: "C", msg: "AVERAGE WEEK" };
+  return { grade: "D", msg: "NEEDS IMPROVEMENT" };
+}
+function avgNetScore(dateKeys, ratingsByDate, ruleMap) {
+  const logged = dateKeys.filter((k) => ratingsByDate[k]);
+  if (logged.length === 0) return null;
+  const total = logged.reduce((s, k) => s + netScoreForDay(ratingsByDate[k], ruleMap), 0);
+  return total / logged.length;
+}
+function computeWeeklyGradeFact(ratingsByDate, ruleMap, yesterdayKey) {
+  const thisMonday = mondayKeyOf(yesterdayKey);
+  const daysThisWeek = weekKeys(thisMonday).filter((k) => k <= yesterdayKey);
+  const avgThis = avgNetScore(daysThisWeek, ratingsByDate, ruleMap);
+  if (avgThis === null) return null;
+
+  const { grade, msg } = getGrade(avgThis);
+  let fact = `This week (avg score ${Math.round(avgThis)}) grades ${grade} - ${msg}.`;
+
+  const lastMonday = addDaysToKey(thisMonday, -7);
+  const avgLast = avgNetScore(weekKeys(lastMonday), ratingsByDate, ruleMap);
+  if (avgLast !== null) {
+    const lastGrade = getGrade(avgLast).grade;
+    const trend = avgThis > avgLast ? "up" : avgThis < avgLast ? "down" : "steady";
+    fact += ` Last week graded ${lastGrade}. Trending ${trend}.`;
+  }
+  return fact;
+}
+
+// Shared sanitizer for every labeled field Gemini returns: strips wrapping
+// quotes and hard-caps word count as a safety net in case the model ignores
+// the length instruction.
+function sanitizeBullet(raw, maxWords = 25) {
+  let text = (raw || "").trim();
   text = text.replace(/^["'“”]+|["'“”]+$/g, "").trim();
+  if (!text) return "";
   const words = text.split(/\s+/).filter(Boolean);
-  if (words.length > 18) text = words.slice(0, 18).join(" ") + "…";
+  if (words.length > maxWords) text = words.slice(0, maxWords).join(" ") + "…";
   return text;
+}
+
+// Parses the fixed "LABEL: value" response format into a field map. Case
+// insensitive, first match per label wins, and a bare NONE (with optional
+// trailing punctuation) is treated as an omitted field.
+function parseStructuredResponse(rawText) {
+  const fields = { streak: null, deadline: null, weekly: null, ack: null, question: null };
+  const seen = new Set();
+  const re = /^(STREAK|DEADLINE|WEEKLY|ACK|QUESTION):\s*(.*)$/i;
+  for (const rawLine of (rawText || "").split("\n")) {
+    const m = rawLine.trim().match(re);
+    if (!m) continue;
+    const key = m[1].toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    let val = m[2].trim().replace(/^["'“”]+|["'“”]+$/g, "").trim();
+    if (/^none[.!]?$/i.test(val)) val = "";
+    fields[key] = val || null;
+  }
+  return fields;
 }
 
 // Shared by the onCall handler (generates on demand, for whichever user opens
 // the app) and the onSchedule job (pre-generates for every active user before
-// they open the app). Returns cached text as-is; only hits Gemini on a miss.
+// they open the app). Returns the cached plan as-is; only hits Gemini on a
+// cache miss.
 async function computeAndCacheNudge(uid, todayKey) {
   const nudgeRef = db.doc(`nudges/${uid}_${todayKey}`);
 
   const cachedSnap = await nudgeRef.get();
-  if (cachedSnap.exists && cachedSnap.data()?.text) {
-    return { nudge: cachedSnap.data().text, cached: true };
+  const cachedBullets = cachedSnap.exists ? cachedSnap.data()?.bullets : null;
+  if (Array.isArray(cachedBullets) && cachedBullets.length) {
+    return { plan: cachedBullets, cached: true };
   }
 
   const yesterdayKey = prevDateKey(todayKey);
 
-  const [ratingSnap, rulesSnap] = await Promise.all([
-    db.doc(`users/${uid}/ratings/${yesterdayKey}`).get(),
+  const [ratingsSnap, rulesSnap, deadlinesSnap, prevNudgeSnap] = await Promise.all([
+    db.collection(`users/${uid}/ratings`).orderBy("date", "desc").limit(RATINGS_HISTORY_LIMIT).get(),
     db.collection(`users/${uid}/rules`).get(),
+    db.collection(`users/${uid}/deadlines`).get(),
+    db.doc(`nudges/${uid}_${yesterdayKey}`).get(),
   ]);
-  const ratingData = ratingSnap.exists ? ratingSnap.data() : null;
+
   const rules = rulesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
+  const activeRules = rules.filter((r) => !r.deleted);
+  const ruleMap = {};
+  rules.forEach((r) => { ruleMap[r.id] = r; });
 
-  const summary = buildYesterdaySummary(ratingData, rules);
+  const ratingsByDate = {};
+  ratingsSnap.docs.forEach((d) => { ratingsByDate[d.data().date] = d.data(); });
+  const deadlineDocs = deadlinesSnap.docs.map((d) => ({ id: d.id, ...d.data() }));
 
-  const prompt =
-    "You are a terse, upbeat habit-tracking coach speaking directly to the user " +
-    "(\"you\"). Write exactly ONE short motivational line, under 15 words, that " +
-    "references something specific from yesterday's data below. No quotes, no " +
-    "emoji, no hashtags - just the line.\n\n" +
-    `Yesterday (${yesterdayKey}) summary: ${summary}`;
+  const ratingData = ratingsByDate[yesterdayKey] ?? null;
+  const streakFact = computeStreakFact(ratingsByDate, ruleMap, activeRules, yesterdayKey);
+  const deadlineFact = computeNearestDeadlineFact(deadlineDocs, Date.now());
+  const weeklyFact = computeWeeklyGradeFact(ratingsByDate, ruleMap, yesterdayKey);
+  const yesterdaySummary = buildYesterdaySummaryFact(ratingData, rules);
+
+  const prevQuestion = prevNudgeSnap.exists ? (prevNudgeSnap.data()?.question || null) : null;
+  const noteText = ratingData?.note ? String(ratingData.note).slice(0, 200) : "";
+
+  const prompt = [
+    "You are a terse, upbeat habit-tracking coach speaking directly to the user (\"you\"). " +
+      "Based on the facts below, reply with EXACTLY five labeled lines in this format and nothing else:",
+    "STREAK: <one short line, under 25 words, or NONE>",
+    "DEADLINE: <one short line, under 25 words, or NONE>",
+    "WEEKLY: <one short line, under 25 words, or NONE>",
+    "ACK: <one short line, under 25 words, or NONE>",
+    "QUESTION: <one new, short, open-ended personal question, under 25 words>",
+    "",
+    "Rules:",
+    "- Only write real content for STREAK/DEADLINE/WEEKLY if their fact below isn't \"(none)\" - " +
+      "otherwise write NONE exactly for that line.",
+    "- No quotes, no emoji, no hashtags, no markdown - just the line after each label (icons are added separately).",
+    "- ACK: if \"Previous question\" is \"(none)\", write NONE. Otherwise briefly acknowledge/react to the user's " +
+      "note below (their answer) - if it's blank, gently note they skipped it - staying upbeat either way.",
+    "- QUESTION: always ask a fresh, short, open-ended personal reflection question (not necessarily about habits), " +
+      "different from the previous question.",
+    "",
+    `Streak fact: ${streakFact ?? "(none)"}`,
+    `Deadline fact: ${deadlineFact ?? "(none)"}`,
+    `Weekly fact: ${weeklyFact ?? "(none)"}`,
+    `Previous question: ${prevQuestion ?? "(none)"}`,
+    `User's note (answer to previous question): ${noteText || "(left blank)"}`,
+    `Yesterday's activity summary: ${yesterdaySummary}`,
+  ].join("\n");
 
   const genAI = new GoogleGenerativeAI(GEMINI_API_KEY.value());
   const model = genAI.getGenerativeModel({ model: "gemini-3.6-flash" });
@@ -155,22 +354,46 @@ async function computeAndCacheNudge(uid, todayKey) {
     finishReason: result.response.candidates?.[0]?.finishReason,
     usage: result.response.usageMetadata,
   });
-  const nudgeText = sanitizeNudge(rawText);
 
-  if (!nudgeText) {
-    throw new Error("Gemini returned an empty nudge.");
+  const parsed = parseStructuredResponse(rawText);
+  logger.info("computeAndCacheNudge: parsed fields", { uid, parsed });
+
+  if (!parsed.streak && !parsed.deadline && !parsed.weekly && !parsed.ack && !parsed.question) {
+    throw new Error("Gemini returned no usable fields.");
   }
+
+  const bullets = [];
+  if (streakFact) {
+    const text = sanitizeBullet(parsed.streak);
+    if (text) bullets.push({ type: "streak", icon: "🔥", text });
+  }
+  if (deadlineFact) {
+    const text = sanitizeBullet(parsed.deadline);
+    if (text) bullets.push({ type: "deadline", icon: "📅", text });
+  }
+  if (weeklyFact) {
+    const text = sanitizeBullet(parsed.weekly);
+    if (text) bullets.push({ type: "weekly", icon: "📈", text });
+  }
+  const ackText = parsed.ack ? sanitizeBullet(parsed.ack) : "";
+  const questionText = sanitizeBullet(parsed.question) || DEFAULT_QUESTION;
+  bullets.push({
+    type: "reflection",
+    icon: "💭",
+    text: [ackText, questionText].filter(Boolean).join(" "),
+  });
 
   await nudgeRef.set({
     uid,
     date: todayKey,
     sourceDate: yesterdayKey,
-    text: nudgeText,
+    question: questionText,
+    bullets,
     model: "gemini-3.6-flash",
     createdAt: admin.firestore.FieldValue.serverTimestamp(),
   });
 
-  return { nudge: nudgeText, cached: false };
+  return { plan: bullets, cached: false };
 }
 
 exports.dailyNudge = onCall({ secrets: [GEMINI_API_KEY] }, async (request) => {
@@ -185,15 +408,15 @@ exports.dailyNudge = onCall({ secrets: [GEMINI_API_KEY] }, async (request) => {
   }
 
   try {
-    const { nudge, cached } = await computeAndCacheNudge(uid, todayKey);
-    return { nudge, cached, date: todayKey };
+    const { plan, cached } = await computeAndCacheNudge(uid, todayKey);
+    return { plan, cached, date: todayKey };
   } catch (err) {
-    logger.error("dailyNudge: failed to generate nudge", err);
-    throw new HttpsError("internal", "Could not generate a nudge right now.");
+    logger.error("dailyNudge: failed to generate plan", err);
+    throw new HttpsError("internal", "Could not generate today's plan right now.");
   }
 });
 
-// Pre-generates today's nudge for every user who has set up rules, so it's
+// Pre-generates today's plan for every user who has set up rules, so it's
 // already cached by the time they open the app. Skips users with no rules
 // (never onboarded) to avoid burning Gemini calls on accounts that only ever
 // signed in once.

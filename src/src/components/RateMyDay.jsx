@@ -57,7 +57,7 @@ export default function RateMyDay({ user }) {
   const [saving, setSaving]               = useState(false);
   const [saved, setSaved]                 = useState(false);
   const [loading, setLoading]             = useState(true);
-  const [nudge, setNudge]                 = useState('');
+  const [plan, setPlan]                   = useState([]);
   const [nudgeLoading, setNudgeLoading]   = useState(true);
   const [nudgeError, setNudgeError]       = useState(false);
 
@@ -65,15 +65,15 @@ export default function RateMyDay({ user }) {
   const weekDays = getWeekDaysForDate(targetDate);
   const isToday  = dateKey === localDateKey(new Date());
 
-  // Fetch the AI coaching nudge once when the screen loads. Independent of
-  // the TODAY/YESTERDAY toggle above - it always refers to "today's" nudge.
+  // Fetch the AI coaching plan once when the screen loads. Independent of
+  // the TODAY/YESTERDAY toggle above - it always refers to "today's" plan.
   useEffect(() => {
     let mounted = true;
     const dailyNudge = httpsCallable(functions, 'dailyNudge');
     dailyNudge({ todayKey: localDateKey(new Date()) })
-      .then(res => { if (mounted) setNudge(res.data?.nudge ?? ''); })
+      .then(res => { if (mounted) setPlan(res.data?.plan ?? []); })
       .catch(err => {
-        console.error('Failed to load daily nudge:', err);
+        console.error('Failed to load daily plan:', err);
         if (mounted) setNudgeError(true);
       })
       .finally(() => { if (mounted) setNudgeLoading(false); });
@@ -175,10 +175,17 @@ export default function RateMyDay({ user }) {
       {nudgeLoading && (
         <div className="nudge-banner nudge-loading">COACH IS THINKING...</div>
       )}
-      {!nudgeLoading && !nudgeError && nudge && (
-        <div className="nudge-banner">
-          <span className="nudge-icon">◆</span>
-          <span className="nudge-text">{nudge}</span>
+      {!nudgeLoading && !nudgeError && plan.length > 0 && (
+        <div className="nudge-banner nudge-plan">
+          <div className="nudge-plan-title">TODAY'S PLAN</div>
+          <ul className="nudge-plan-list">
+            {plan.map((b, i) => (
+              <li key={i} className="nudge-plan-item">
+                <span className="nudge-icon">{b.icon}</span>
+                <span className="nudge-text">{b.text}</span>
+              </li>
+            ))}
+          </ul>
         </div>
       )}
       <div className="date-toggle">

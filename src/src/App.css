@@ -152,6 +152,18 @@
 .nudge-text {
   color: var(--text); font-size: .75rem; line-height: 1.5; letter-spacing: .01em;
 }
+.nudge-banner.nudge-plan {
+  flex-direction: column; align-items: stretch; gap: .5rem;
+}
+.nudge-plan-title {
+  font-family: 'Press Start 2P', monospace; font-size: .55rem;
+  letter-spacing: .06em; color: var(--cyan);
+}
+.nudge-plan-list {
+  list-style: none; margin: 0; padding: 0;
+  display: flex; flex-direction: column; gap: .4rem;
+}
+.nudge-plan-item { display: flex; align-items: flex-start; gap: .5rem; }
 .nudge-banner.nudge-loading {
   color: var(--muted); font-family: 'Press Start 2P', monospace;
   font-size: .52rem; letter-spacing: .06em;
